@@ -1,0 +1,199 @@
+  //
+  // this code is taken from ( based on) http://blogs.quovantis.com/image-classification-using-apache-spark-with-linear-svm/
+  //
+
+  import java.awt.AlphaComposite;
+  import java.awt.Color;
+  import java.awt.Graphics2D;
+  import java.awt.image.BufferedImage;
+  import java.awt.image.DataBufferByte;
+  import java.awt.image.Raster;
+  import java.io.BufferedWriter;
+  import java.io.File;
+  import java.io.FileWriter;
+  import java.io.IOException;
+  import java.io.PrintWriter;
+  import java.nio.file.FileVisitResult;
+  import java.nio.file.Files;
+  import java.nio.file.Path;
+  import java.nio.file.Paths;
+  import java.nio.file.SimpleFileVisitor;
+  import java.nio.file.attribute.BasicFileAttributes;
+  import java.util.ArrayList;
+
+  import javax.imageio.ImageIO;
+
+  
+  public class ImageParser {
+
+	public static void main(String[] args) throws Exception {
+        	new ImageParser().run(args);
+    	}
+
+  	public void toGray(BufferedImage colorImage) {
+		
+  		int width = colorImage.getWidth();
+  		int height = colorImage.getHeight();
+		
+		int sum = 0;
+  		for(int i=0; i<height; i++){
+  			for(int j=0; j<width; j++){
+				
+  				Color c = new Color(colorImage.getRGB(j, i));
+ 				
+				sum = (int)(Math.floor(c.getRed() * 0.2126 + c.getGreen() * 0.7152 + c.getBlue() *0.0722));
+				Color newColor = new Color(sum,sum,sum);
+				colorImage.setRGB(j,i,newColor.getRGB());
+				
+  			}
+  		}
+
+		
+  	}
+
+  	public BufferedImage createResizedCopy(BufferedImage originalImage, int scaledWidth, int scaledHeight, boolean preserveAlpha){
+		
+  		System.out.println("resizing...");
+  		int imageType = preserveAlpha ? BufferedImage.TYPE_INT_RGB : BufferedImage.TYPE_INT_ARGB;
+  		BufferedImage scaledBI = new BufferedImage(scaledWidth, scaledHeight, imageType);
+  		Graphics2D g = scaledBI.createGraphics();
+  		if (preserveAlpha) {
+  			g.setComposite(AlphaComposite.Src);
+  		}
+  		g.drawImage(originalImage, 0, 0, scaledWidth, scaledHeight, null);
+  		g.dispose();
+  		return scaledBI;
+		
+  	}
+
+  	public void run(String[] args) throws IOException {
+
+  		
+  		String[] piexels=args[0].split("x");
+
+  		int scaledWidth= Integer.parseInt(piexels[0]);
+  		int scaledHeight= Integer.parseInt(piexels[1]);
+	
+  		ArrayList<String> paths = new ArrayList<String>();
+		ArrayList<String> gray_paths = new ArrayList<String>();
+
+  		
+  		Files.walkFileTree(
+			Paths.get(args[1].toString()), 
+
+			// If you don't need to implement all four of the FileVisitor methods, instead of implementing the FileVisitor interface, you can extend the SimpleFileVisitor class
+			new SimpleFileVisitor<Path>() {
+
+  				@Override
+  				public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+  					
+  					paths.add(file.toFile().getAbsolutePath());
+
+					if (attrs.isSymbolicLink()) {
+            					System.out.format("Symbolic link: %s ", file);
+        				} else if (attrs.isRegularFile()) {
+            					System.out.format("Regular file: %s ", file);
+        				} else {
+            					System.out.format("Other: %s ", file);
+        				}
+        				System.out.println("(" + attrs.size() + "bytes)");
+
+  					return FileVisitResult.CONTINUE;
+  				}
+
+  				@Override
+  				public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+  					
+					 System.out.format("Directory: %s%n", dir);
+  					return FileVisitResult.CONTINUE;
+  				}
+
+				@Override
+    				public FileVisitResult visitFileFailed(Path file,  IOException exc) {
+        				System.err.println(exc);
+        				return FileVisitResult.CONTINUE;
+    				}
+  			}
+		);
+		
+  		for(String file : paths){
+
+			System.out.println("... save an image ...");
+  			String extension = "";
+
+  			int extIndex = file.lastIndexOf('.');
+  			extension = file.substring(extIndex+1);
+
+			System.out.println("extension = " + extension);
+			
+			String filename  = file.substring(0,extIndex);
+							
+
+  			File input = new File(file.toString());
+  			BufferedImage colorImage =createResizedCopy(ImageIO.read(input),scaledWidth,scaledHeight,Boolean.TRUE);
+  			toGray(colorImage);
+
+
+  			//File output = new File(file.toString());
+			//File output = new File(filename+"."+extension);
+			File output = new File(filename+"."+extension);
+
+			try {
+				// static boolean ImageIO.write(RenderedImage im, String formatName,  File output)  throws IOException
+  				ImageIO.write(colorImage, extension, output);
+					
+			} catch (IOException e) {
+    				System.out.println("... image write IOException ...");
+			}
+			
+  		}
+
+  		try
+  		{
+  			
+  			try(PrintWriter out = new PrintWriter(
+							new BufferedWriter(
+								new FileWriter("input-"+args[2]+".csv", true)
+							)
+					      )
+			   ) {
+
+  				for(String file : paths){
+
+  					File file1 = new File(file.toString());
+
+
+					
+					
+  					BufferedImage img= ImageIO.read(file1);
+  					if (img == null) continue;
+  					Raster raster=img.getData();
+  					int w=raster.getWidth(),h=raster.getHeight();
+
+  					
+  					out.print(args[2]+",");
+					out.print(new_filename+",");
+
+  					for (int x=0;x<w;x++)
+  					{
+  						for(int y=0;y<h;y++)
+  						{
+  							out.print(raster.getSample(x,y,0)+" "); // R=G=B
+  						}
+  						out.print(" ");
+  					}
+  					out.println("");
+  				}
+
+  			}catch (IOException e) {
+  				//exception handling skipped for the reader
+  			}
+
+  		}
+  		catch (Exception e)
+  		{
+  			//exception handling skipped for the reader
+  		}
+
+  	}
+  }
